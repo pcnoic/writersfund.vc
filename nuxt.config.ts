@@ -19,6 +19,11 @@ export default defineNuxtConfig({
         { name: "description", content: "An accelerator for writers." },
         { name: "viewport", content: "width=device-width, initial-scale=1" },
       ],
+      link: [
+        { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32.png" },
+        { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16.png" },
+        { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" },
+      ],
     },
   },
 });

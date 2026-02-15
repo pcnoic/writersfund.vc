@@ -1,12 +1,8 @@
 import { createError } from "h3";
 import { randomUUID } from "node:crypto";
 import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server";
-import {
-  buildAiStoryFromNarrative,
-  getWordCount,
-  summarizeNarrative,
-} from "~/server/utils/narrative";
-import { canSubmitNow, getNextVotingWindow } from "~/server/utils/schedule";
+import { getWordCount } from "~/server/utils/narrative";
+import { canSubmitNow } from "~/server/utils/schedule";
 import { spellcheck } from "~/server/utils/spellcheck";
 import { verifyRecaptcha } from "~/server/utils/recaptcha";
 
@@ -61,46 +57,24 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const narrative = await summarizeNarrative(corrected);
-  const aiStory = await buildAiStoryFromNarrative({
-    narrative,
-    maxWords: wordCount,
-    genre: body.genre,
-  });
-
   const supabase = await serverSupabaseClient(event);
 
   const writerPassageId = randomUUID();
-  const aiPassageId = randomUUID();
 
   const { error: insertPassagesError } = await supabase
     .from("passages")
-    .insert([
-      {
-        id: writerPassageId,
-        user_id: user.id,
-        kind: "writer",
-        title: body.title.trim(),
-        content: corrected,
-        genre: body.genre.trim(),
-        status: "approved",
-        narrative,
-        word_count: wordCount,
-        parent_passage_id: null,
-      },
-      {
-        id: aiPassageId,
-        user_id: null,
-        kind: "ai",
-        title: `${body.title.trim()} (AI mirror)`,
-        content: aiStory,
-        genre: body.genre.trim(),
-        status: "approved",
-        narrative,
-        word_count: wordCount,
-        parent_passage_id: writerPassageId,
-      },
-    ]);
+    .insert({
+      id: writerPassageId,
+      user_id: user.id,
+      kind: "writer",
+      title: body.title.trim(),
+      content: corrected,
+      genre: body.genre.trim(),
+      status: "pending_processing",
+      narrative: null,
+      word_count: wordCount,
+      parent_passage_id: null,
+    });
 
   if (insertPassagesError) {
     throw createError({
@@ -109,54 +83,15 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { data: tournament } = await supabase
-    .from("tournaments")
-    .select("id")
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (!tournament?.id) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: "No active tournament configured.",
-    });
-  }
-
-  const nextWindow = getNextVotingWindow();
-  const matchupId = randomUUID();
-  const { error: matchupError } = await supabase.from("matchups").insert({
-    id: matchupId,
-    tournament_id: tournament.id,
-    writer_passage_id: writerPassageId,
-    ai_passage_id: aiPassageId,
-    opens_at: nextWindow.opensAt.toISOString(),
-    closes_at: nextWindow.closesAt.toISOString(),
-    status: "open",
-  });
-
-  if (matchupError) {
-    throw createError({ statusCode: 500, statusMessage: matchupError.message });
-  }
-
   return {
     passage: {
       id: writerPassageId,
       title: body.title.trim(),
       content: corrected,
       genre: body.genre.trim(),
+      status: "pending_processing",
     },
-    aiPassage: {
-      id: aiPassageId,
-      title: `${body.title.trim()} (AI mirror)`,
-      content: aiStory,
-      genre: body.genre.trim(),
-    },
-    matchup: {
-      id: matchupId,
-      opensAt: nextWindow.opensAt.toISOString(),
-      closesAt: nextWindow.closesAt.toISOString(),
-    },
-    narrative,
     wordCount,
+    message: "Submission received. Your story will be processed shortly.",
   };
 });

@@ -271,14 +271,16 @@ async function submit() {
       }
     })
 
-    state.message = 'Submission received. AI mirror story created for the next voting window.'
-    state.narrative = data.narrative
+    state.message = data.message || 'Submission received. Your story will be processed shortly.'
     state.wordCount = data.wordCount
     form.title = ''
     form.content = ''
+    form.customGenre = ''
+    form.genre = ''
     state.correctedPreview = ''
     acceptFixes.value = false
     localStorage.removeItem(autoSaveKey)
+    await checkExistingSubmission()
   } catch (error) {
     state.message = (error as Error).message
   } finally {
@@ -339,9 +341,15 @@ watch(() => [form.title, form.genre, form.content], () => {
         <div class="prose story-preview">{{ existingSubmission.content }}</div>
       </div>
 
-      <div v-if="existingSubmission.narrative" class="submitted-narrative">
+      <div class="submitted-narrative">
         <strong>AI Narrative Summary</strong>
-        <p class="muted">{{ existingSubmission.narrative }}</p>
+        <div v-if="existingSubmission.narrative">
+          <p class="muted">{{ existingSubmission.narrative }}</p>
+        </div>
+        <div v-else class="processing-notice">
+          <p class="muted">Your story is being processed. The AI narrative summary will appear here shortly (usually within 5 minutes).</p>
+          <button class="secondary" @click="checkExistingSubmission">Refresh status</button>
+        </div>
       </div>
     </section>
   </div>
@@ -535,6 +543,17 @@ watch(() => [form.title, form.genre, form.content], () => {
 .submitted-narrative strong {
   display: block;
   margin-bottom: 0.5rem;
+}
+
+.processing-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.processing-notice p {
+  margin: 0;
 }
 
 .editor-layout {
