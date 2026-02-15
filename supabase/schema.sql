@@ -82,10 +82,10 @@ begin
   insert into public.profiles (id, name, pen_name, email, timezone, bio)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
-    coalesce(new.raw_user_meta_data->>'pen_name', split_part(new.email, '@', 1)),
+    coalesce(nullif(new.raw_user_meta_data->>'name', ''), split_part(new.email, '@', 1)),
+    coalesce(nullif(new.raw_user_meta_data->>'pen_name', ''), nullif(new.raw_user_meta_data->>'name', ''), split_part(new.email, '@', 1)),
     new.email,
-    coalesce(new.raw_user_meta_data->>'timezone', 'UTC'),
+    coalesce(nullif(new.raw_user_meta_data->>'timezone', ''), 'UTC'),
     coalesce(new.raw_user_meta_data->>'bio', '')
   );
   return new;

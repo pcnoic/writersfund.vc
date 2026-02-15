@@ -5,6 +5,12 @@ export default defineNuxtConfig({
   supabase: {
     redirect: false,
   },
+  runtimeConfig: {
+    recaptchaSecretKey: process.env.RECAPTCHA_SECRET_KEY || "",
+    public: {
+      recaptchaSiteKey: process.env.RECAPTCHA_SITE_KEY || "",
+    },
+  },
   css: ["~/assets/css/main.css"],
   app: {
     head: {

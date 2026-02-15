@@ -23,7 +23,7 @@ export function useAuth() {
         options: {
           data: {
             name: input.name,
-            pen_name: input.penName,
+            pen_name: input.penName || input.name,
             timezone: input.timezone,
             bio: input.bio || ''
           }
@@ -31,6 +31,21 @@ export function useAuth() {
       })
 
       if (error) throw error
+
+      if (data.user) {
+        const { error: insertError } = await client.from('users').insert({
+          id: data.user.id,
+          email: input.email,
+          name: input.name,
+          pen_name: input.penName || input.name,
+          timezone: input.timezone,
+          bio: input.bio || ''
+        })
+        if (insertError) {
+          console.error('Failed to create user record:', insertError)
+        }
+      }
+
       return data
     } finally {
       pending.value = false

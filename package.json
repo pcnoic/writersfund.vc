@@ -14,7 +14,8 @@
     "drizzle-orm": "^0.44.5",
     "nuxt": "^3.17.4",
     "openai": "^6.22.0",
-    "postgres": "^3.4.7"
+    "postgres": "^3.4.7",
+    "vue-recaptcha-v3": "^2.0.1"
   },
   "devDependencies": {
     "dotenv": "^17.2.3",

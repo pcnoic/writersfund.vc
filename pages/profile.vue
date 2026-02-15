@@ -18,7 +18,8 @@ const profile = ref<{
     votesCast: number
   }
   timeline: Array<{ week: number; status: string; delta: string }>
-  passages: Array<{ id: string; title: string; createdAt: string }>
+  passages: Array<{ id: string; title: string; created_at: string }>
+  feedback: string[]
 } | null>(null)
 
 async function loadProfile() {
@@ -94,18 +95,19 @@ onMounted(async () => {
     <h2>Recent submissions</h2>
     <ul>
       <li v-for="passage in profile.passages" :key="passage.id">
-        {{ passage.title }} <span class="muted">({{ passage.createdAt }})</span>
+        {{ passage.title }} <span class="muted">({{ passage.created_at }})</span>
       </li>
     </ul>
   </section>
 
   <section class="card" v-if="profile" style="margin-top: 1.5rem">
-    <h2>Feedback summary</h2>
-    <p class="muted">Aggregated themes from peers are shown here. Individual feedback stays anonymous.</p>
-    <ul>
-      <li>Clarity and pacing</li>
-      <li>Character voice consistency</li>
-      <li>Ending impact</li>
+    <h2>Feedback received</h2>
+    <p class="muted">Anonymous feedback from peers on your submissions.</p>
+    <ul v-if="profile.feedback && profile.feedback.length > 0">
+      <li v-for="(fb, index) in profile.feedback" :key="index" class="feedback-item">
+        {{ fb }}
+      </li>
     </ul>
+    <p v-else class="muted">No feedback received yet.</p>
   </section>
 </template>

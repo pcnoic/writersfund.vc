@@ -8,11 +8,13 @@ import {
 } from "~/server/utils/narrative";
 import { canSubmitNow, getNextVotingWindow } from "~/server/utils/schedule";
 import { spellcheck } from "~/server/utils/spellcheck";
+import { verifyRecaptcha } from "~/server/utils/recaptcha";
 
 interface CreatePassageBody {
   title?: string;
   content?: string;
   genre?: string;
+  recaptchaToken?: string;
 }
 
 export default defineEventHandler(async (event) => {
@@ -39,6 +41,8 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Passage content must be at least 120 characters.",
     });
   }
+
+  await verifyRecaptcha(body.recaptchaToken || "", "submission");
 
   const submissionWindow = canSubmitNow();
   if (!submissionWindow.allowed) {

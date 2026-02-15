@@ -1,6 +1,12 @@
 import { serverSupabaseClient } from '#supabase/server'
 import { formatUtc, getNextLeaderboardUpdate } from '~/server/utils/schedule'
 
+function weekIndex(startIso: string, now = new Date()): number {
+  const start = new Date(startIso)
+  const diffMs = now.getTime() - start.getTime()
+  return Math.max(1, Math.min(12, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1))
+}
+
 interface LeaderboardEntry {
   writerId: string
   writerName: string
@@ -78,9 +84,22 @@ export default defineEventHandler(async (event) => {
 
   const entries = Array.from(writerMap.values()).sort((a, b) => b.rating - a.rating)
 
+  const { data: tournament } = await supabase
+    .from('tournaments')
+    .select('created_at')
+    .eq('status', 'active')
+    .maybeSingle()
+
+  const currentWeek = tournament?.created_at ? weekIndex(tournament.created_at) : 1
+  const totalWeeks = 12
+  const weeksRemaining = totalWeeks - currentWeek
+
   return {
     updatedAt: new Date().toISOString(),
     nextUpdateAt: formatUtc(getNextLeaderboardUpdate()),
+    currentWeek,
+    totalWeeks,
+    weeksRemaining,
     entries
   }
 })

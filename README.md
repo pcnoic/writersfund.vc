@@ -42,15 +42,12 @@ SUPABASE_KEY=your-anon-public-key
 - `/voting` (auth)
 - `/leaderboard` (auth)
 - `/profile` (auth)
-- `/apply` (auth)
 - `/terms` and `/privacy`
 
 ## API surface
 
-- `POST /api/signup`
 - `GET /api/me`
 - `GET /api/profile` (auth)
-- `POST /api/applications` (auth)
 - `GET /api/tournaments/current`
 - `GET /api/leaderboard` (auth)
 - `POST /api/passages` (auth)

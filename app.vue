@@ -11,6 +11,14 @@ const displayName = computed(() => {
   const metadata = auth.user.value?.user_metadata as Record<string, string> | undefined
   return metadata?.pen_name || metadata?.name || auth.user.value?.email || 'Account'
 })
+
+const showUserMenu = ref(false)
+
+async function handleSignOut() {
+  await auth.signOut()
+  showUserMenu.value = false
+  await navigateTo('/')
+}
 </script>
 
 <template>
@@ -26,19 +34,14 @@ const displayName = computed(() => {
           <span v-else class="muted">Vote (closed)</span>
           <NuxtLink to="/submission">Submit</NuxtLink>
           <NuxtLink to="/profile">Profile</NuxtLink>
-          <NuxtLink to="/apply">Apply</NuxtLink>
-          <span class="muted">{{ displayName }}</span>
-          <button
-            class="secondary"
-            @click="
-              async () => {
-                await auth.signOut()
-                await navigateTo('/')
-              }
-            "
-          >
-            Sign out
-          </button>
+          <div class="user-menu">
+            <button class="user-menu-trigger" @click="showUserMenu = !showUserMenu">
+              {{ displayName }}
+            </button>
+            <div v-if="showUserMenu" class="user-menu-dropdown">
+              <button class="user-menu-item" @click="handleSignOut">Sign out</button>
+            </div>
+          </div>
         </template>
         <template v-else>
           <NuxtLink to="/">Home</NuxtLink>

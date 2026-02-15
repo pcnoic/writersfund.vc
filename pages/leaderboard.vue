@@ -11,14 +11,31 @@ const leaderboard = ref<Array<{
   votesReceived: number
 }>>([])
 
-const meta = ref({ updatedAt: '', nextUpdateAt: '' })
+const meta = ref({ 
+  updatedAt: '', 
+  nextUpdateAt: '',
+  currentWeek: 1,
+  totalWeeks: 12,
+  weeksRemaining: 11
+})
 
 async function loadLeaderboard() {
-  const data = await $fetch<{ entries: typeof leaderboard.value; updatedAt: string; nextUpdateAt: string }>(
-    '/api/leaderboard'
-  )
+  const data = await $fetch<{ 
+    entries: typeof leaderboard.value
+    updatedAt: string
+    nextUpdateAt: string
+    currentWeek: number
+    totalWeeks: number
+    weeksRemaining: number
+  }>('/api/leaderboard')
   leaderboard.value = data.entries
-  meta.value = { updatedAt: data.updatedAt, nextUpdateAt: data.nextUpdateAt }
+  meta.value = { 
+    updatedAt: data.updatedAt, 
+    nextUpdateAt: data.nextUpdateAt,
+    currentWeek: data.currentWeek,
+    totalWeeks: data.totalWeeks,
+    weeksRemaining: data.weeksRemaining
+  }
 }
 
 function winRate(entry: (typeof leaderboard.value)[number]): string {
@@ -32,6 +49,10 @@ onMounted(loadLeaderboard)
 <template>
   <section class="card">
     <h1>Leaderboard</h1>
+    <div class="week-banner">
+      <strong>Week {{ meta.currentWeek }} of {{ meta.totalWeeks }}</strong>
+      <span class="muted">{{ meta.weeksRemaining }} week{{ meta.weeksRemaining !== 1 ? 's' : '' }} remaining</span>
+    </div>
     <p class="muted">Scores are cumulative for the current 12-week batch.</p>
     <p class="muted">Last computed: {{ meta.updatedAt }}</p>
     <p class="muted">Next scheduled update: {{ meta.nextUpdateAt }}</p>
@@ -60,3 +81,19 @@ onMounted(loadLeaderboard)
     </div>
   </section>
 </template>
+
+<style scoped>
+.week-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f0efe8;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.week-banner strong {
+  font-size: 1.1rem;
+}
+</style>

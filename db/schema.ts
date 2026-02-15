@@ -69,6 +69,9 @@ export const passages = pgTable('passages', {
   content: text('content').notNull(),
   genre: varchar('genre', { length: 120 }).notNull(),
   status: varchar('status', { length: 32 }).notNull(),
+  narrative: text('narrative'),
+  wordCount: real('word_count'),
+  parentPassageId: text('parent_passage_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
   passagesUserIdx: index('passages_user_idx').on(table.userId)

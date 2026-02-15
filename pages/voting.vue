@@ -23,6 +23,7 @@ interface BallotResponse {
 }
 
 const auth = useAuth()
+const { getToken } = useRecaptcha()
 const ballot = ref<BallotResponse['ballot']>(null)
 const passages = ref<BallotResponse['passages']>()
 const feedback = ref('')
@@ -75,12 +76,20 @@ async function vote(choice: VoteChoice) {
   voteState.message = ''
 
   try {
+    const recaptchaToken = await getToken('vote')
+    if (!recaptchaToken) {
+      voteState.message = 'reCAPTCHA verification failed. Please try again.'
+      voteState.loading = false
+      return
+    }
+
     await $fetch('/api/votes', {
       method: 'POST',
       body: {
         ballotId: ballot.value.id,
         choice,
-        feedback: feedback.value
+        feedback: feedback.value,
+        recaptchaToken
       }
     })
     voteState.message = 'Vote recorded. Feedback submitted.'
@@ -111,11 +120,11 @@ onMounted(async () => {
       <p class="muted">Voting window: {{ schedule.window }}</p>
       <p class="muted">Status: {{ schedule.status }}</p>
 
-      <p v-if="!auth.user">
+      <p v-if="!auth.user.value">
         Please <NuxtLink to="/login">sign in</NuxtLink> to vote.
       </p>
       <p v-else class="muted">
-        Signed in as {{ auth.user.user_metadata?.pen_name || auth.user.user_metadata?.name || auth.user.email }}.
+        Signed in as {{ auth.user.value?.user_metadata?.pen_name || auth.user.value?.user_metadata?.name || auth.user.value?.email }}.
       </p>
 
       <label>

@@ -2,11 +2,13 @@ import { createError } from 'h3'
 import { randomUUID } from 'node:crypto'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 import type { VoteChoice } from '~/types/domain'
+import { verifyRecaptcha } from '~/server/utils/recaptcha'
 
 interface VoteBody {
   ballotId?: string
   choice?: VoteChoice
   feedback?: string
+  recaptchaToken?: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -28,6 +30,8 @@ export default defineEventHandler(async (event) => {
   if (body.feedback.trim().length < 50) {
     throw createError({ statusCode: 400, statusMessage: 'Feedback must be at least 50 characters.' })
   }
+
+  await verifyRecaptcha(body.recaptchaToken || '', 'vote')
 
   const supabase = await serverSupabaseClient(event)
 
