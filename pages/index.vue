@@ -79,7 +79,7 @@ const isLoggedIn = computed(() => !!auth.user.value)
         <article class="feature-card">
           <div class="feature-icon">📊</div>
           <h3>ELO Rankings</h3>
-          <p>The same system used in chess. Objective, mathematical, impossible to game.</p>
+          <p>The same system used in chess.</p>
         </article>
 
         <article class="feature-card">
@@ -91,13 +91,13 @@ const isLoggedIn = computed(() => !!auth.user.value)
         <article class="feature-card">
           <div class="feature-icon">📚</div>
           <h3>Any Genre</h3>
-          <p>Literary fiction, sci-fi, fantasy, horror, romance—write what moves you.</p>
+          <p>Literary fiction, sci-fi, fantasy, horror, romance. Feel free to write what moves you.</p>
         </article>
 
         <article class="feature-card">
           <div class="feature-icon">🏆</div>
           <h3>Season Champions</h3>
-          <p>Top performers at season end get recognized. Build a track record that matters.</p>
+          <p>Top performers at season end get a $10,000 investment. Build a track record that matters.</p>
         </article>
       </div>
     </section>
@@ -139,7 +139,7 @@ const isLoggedIn = computed(() => !!auth.user.value)
       <div class="faq-grid">
         <div class="faq-item">
           <h4>How does the AI mirror work?</h4>
-          <p>We extract the core narrative from your story—plot points, character arcs, themes—and generate a new story with the same structure but different execution.</p>
+          <p>We extract the core narrative from your story and generate a new story with the same structure but different execution.</p>
         </div>
         <div class="faq-item">
           <h4>Is this free?</h4>
@@ -158,8 +158,8 @@ const isLoggedIn = computed(() => !!auth.user.value)
 
     <!-- Footer CTA -->
     <section class="cta-section">
-      <h2>Ready to prove yourself?</h2>
-      <p>Join writers who take their craft seriously. No excuses. Just weekly competition.</p>
+      <h2>Ready to compete?</h2>
+      <p>Join writers who take their craft seriously and enjoy weekly competition.</p>
       <div class="cta-actions">
         <template v-if="isLoggedIn">
           <NuxtLink to="/submission">
