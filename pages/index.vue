@@ -30,21 +30,6 @@ const isLoggedIn = computed(() => !!auth.user.value)
           </div>
         </div>
 
-        <div class="actions">
-          <template v-if="isLoggedIn">
-            <NuxtLink to="/submission">
-              <button class="btn-primary">Submit This Week</button>
-            </NuxtLink>
-            <NuxtLink to="/tournament">
-              <button class="btn-secondary">View Tournament</button>
-            </NuxtLink>
-          </template>
-          <template v-else>
-            <NuxtLink to="/signup">
-              <button class="btn-primary">Start Writing</button>
-            </NuxtLink>
-          </template>
-        </div>
       </div>
     </header>
 
