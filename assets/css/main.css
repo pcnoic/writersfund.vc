@@ -52,6 +52,7 @@ a {
 
 .nav {
   display: flex;
+  align-items: center;
   gap: 1rem;
   font-size: 0.95rem;
   flex-wrap: wrap;
@@ -301,15 +302,18 @@ mark {
 
 .user-menu {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .user-menu-trigger {
   background: transparent;
   color: var(--accent);
   border: 1px solid var(--accent);
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.85rem;
   font-size: 0.9rem;
   cursor: pointer;
+  line-height: 1.2;
 }
 
 .user-menu-trigger:hover {
