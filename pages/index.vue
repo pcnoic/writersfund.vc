@@ -11,8 +11,8 @@ const isLoggedIn = computed(() => !!auth.user.value)
         <span class="hero-badge">Season 1 Now Live</span>
         <h1>Writers Fund</h1>
         <p class="hero-tagline">
-          The competitive accelerator for serious writers. Submit weekly stories, 
-          compete in blind matchups against AI, and climb the ELO rankings.
+          The competitive accelerator for writers. Submit weekly stories, 
+          compete in blind matchups against AI, and climb the leaderboard.
         </p>
 
         <div class="hero-stats">
@@ -174,7 +174,7 @@ const isLoggedIn = computed(() => !!auth.user.value)
     <!-- Footer CTA -->
     <section class="cta-section">
       <h2>Ready to prove yourself?</h2>
-      <p>Join writers who take their craft seriously. No fluff. No excuses. Just weekly competition.</p>
+      <p>Join writers who take their craft seriously. No excuses. Just weekly competition.</p>
       <div class="cta-actions">
         <template v-if="isLoggedIn">
           <NuxtLink to="/submission">
