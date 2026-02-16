@@ -54,7 +54,7 @@ const isLoggedIn = computed(() => !!auth.user.value)
           </div>
           <div class="concept-card">
             <h4>Why Blind?</h4>
-            <p>Voters see only the text. No names, no bios, no reputation. The story speaks for itself.</p>
+            <p>Voters see only the text. The story speaks for itself.</p>
           </div>
         </div>
       </div>
