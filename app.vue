@@ -6,7 +6,12 @@ const { data: votingSchedule } = await useAsyncData('voting-schedule', () =>
   $fetch<{ isOpen: boolean; status: string }>('/api/voting/schedule')
 )
 
+const { data: adminCheck } = await useAsyncData('admin-check', () =>
+  $fetch<{ isAdmin: boolean; role?: string }>('/api/admin/check')
+)
+
 const isAuthed = computed(() => Boolean(auth.user.value?.id))
+const isAdmin = computed(() => adminCheck.value?.isAdmin === true)
 const displayName = computed(() => {
   const metadata = auth.user.value?.user_metadata as Record<string, string> | undefined
   return metadata?.pen_name || metadata?.name || auth.user.value?.email || 'Account'
@@ -34,6 +39,7 @@ async function handleSignOut() {
           <span v-else class="muted">Vote (closed)</span>
           <NuxtLink to="/submission">Submit</NuxtLink>
           <NuxtLink to="/profile">Profile</NuxtLink>
+          <NuxtLink v-if="isAdmin" to="/admin" class="admin-link">Admin</NuxtLink>
           <div class="user-menu">
             <button class="user-menu-trigger" @click="showUserMenu = !showUserMenu">
               {{ displayName }}

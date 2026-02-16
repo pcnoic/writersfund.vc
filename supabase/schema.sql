@@ -156,3 +156,49 @@ create policy "Votes readable" on votes
 create policy "Votes insert own" on votes
   for insert
   with check (auth.uid() = voter_id);
+
+-- Admin tables
+create table if not exists admin_users (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  email text not null unique,
+  role text not null default 'admin',
+  created_at timestamptz not null default now(),
+  created_by uuid references admin_users(id)
+);
+
+create table if not exists admin_invites (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  token text not null unique,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now(),
+  created_by uuid references admin_users(id)
+);
+
+-- Seed the initial admin (pcnoic@gmail.com)
+-- Run this after the user signs up:
+-- INSERT INTO admin_users (user_id, email, role)
+-- SELECT id, email, 'super_admin' FROM users WHERE email = 'pcnoic@gmail.com';
+
+alter table admin_users enable row level security;
+alter table admin_invites enable row level security;
+
+create policy "Admin users readable by admins" on admin_users
+  for select
+  using (
+    exists (select 1 from admin_users where user_id = auth.uid()::text)
+  );
+
+create policy "Admin invites readable by admins" on admin_invites
+  for select
+  using (
+    exists (select 1 from admin_users where user_id = auth.uid()::text)
+  );
+
+create policy "Admin invites insert by admins" on admin_invites
+  for insert
+  with check (
+    exists (select 1 from admin_users where user_id = auth.uid()::text)
+  );

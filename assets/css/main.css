@@ -68,6 +68,15 @@ a {
   font-weight: 600;
 }
 
+.nav .admin-link {
+  color: #856404;
+  font-weight: 500;
+}
+
+.nav .admin-link:hover {
+  color: #6c5303;
+}
+
 .content {
   max-width: 72ch;
   margin: 0 auto;
