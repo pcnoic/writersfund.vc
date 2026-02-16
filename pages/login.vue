@@ -65,7 +65,7 @@ async function signOut() {
 
       <button @click="signIn" style="width: 100%; margin-top: 1rem">Sign in</button>
 
-      <div v-if="auth.user" style="text-align: center; margin-top: 1rem">
+      <div v-if="auth.user.value" style="text-align: center; margin-top: 1rem">
         <button class="secondary" @click="signOut">Sign out</button>
       </div>
 
