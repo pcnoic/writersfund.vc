@@ -1,97 +1,100 @@
-import { createClient } from "@supabase/supabase-js";
+import { query, queryOne, transaction } from '~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
-  const authHeader = getHeader(event, "authorization");
-  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = getHeader(event, 'authorization')
+  const cronSecret = process.env.CRON_SECRET
 
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     throw createError({
       statusCode: 401,
-      statusMessage: "Unauthorized",
-    });
+      statusMessage: 'Unauthorized',
+    })
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
+  try {
+    const { rows: writerPassages } = await query(
+      `SELECT id, user_id, title, created_at 
+       FROM passages 
+       WHERE kind = 'writer' 
+       ORDER BY created_at ASC`
+    )
 
-  if (!supabaseUrl || !supabaseKey) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Supabase configuration missing",
-    });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const { data: writerPassages, error: fetchError } = await supabase
-    .from("passages")
-    .select("id, user_id, title, created_at")
-    .eq("kind", "writer")
-    .order("created_at", { ascending: true });
-
-  if (fetchError) {
-    console.error("[Cleanup] Error fetching passages:", fetchError);
-    throw createError({
-      statusCode: 500,
-      statusMessage: fetchError.message,
-    });
-  }
-
-  if (!writerPassages || writerPassages.length === 0) {
-    return { duplicatesRemoved: 0, message: "No passages to check" };
-  }
-
-  const seen = new Map<string, string>();
-  const duplicateIds: string[] = [];
-
-  for (const passage of writerPassages) {
-    const key = `${passage.user_id}:${passage.title.toLowerCase().trim()}`;
-    
-    if (seen.has(key)) {
-      duplicateIds.push(passage.id);
-      console.log(`[Cleanup] Found duplicate: "${passage.title}" (id: ${passage.id})`);
-    } else {
-      seen.set(key, passage.id);
+    if (writerPassages.length === 0) {
+      return { duplicatesRemoved: 0, message: 'No passages to check' }
     }
-  }
 
-  if (duplicateIds.length === 0) {
-    return { duplicatesRemoved: 0, message: "No duplicates found" };
-  }
+    const seen = new Map<string, string>()
+    const duplicateIds: string[] = []
 
-  console.log(`[Cleanup] Removing ${duplicateIds.length} duplicate passages...`);
+    for (const passage of writerPassages) {
+      const key = `${passage.user_id}:${passage.title.toLowerCase().trim()}`
 
-  const { data: aiPassages } = await supabase
-    .from("passages")
-    .select("id")
-    .in("parent_passage_id", duplicateIds);
+      if (seen.has(key)) {
+        duplicateIds.push(passage.id)
+        console.log(`[Cleanup] Found duplicate: "${passage.title}" (id: ${passage.id})`)
+      } else {
+        seen.set(key, passage.id)
+      }
+    }
 
-  const aiPassageIds = aiPassages?.map((p) => p.id) || [];
+    if (duplicateIds.length === 0) {
+      return { duplicatesRemoved: 0, message: 'No duplicates found' }
+    }
 
-  if (aiPassageIds.length > 0) {
-    await supabase.from("matchups").delete().in("ai_passage_id", aiPassageIds);
-    await supabase.from("matchups").delete().in("writer_passage_id", duplicateIds);
-    await supabase.from("passages").delete().in("id", aiPassageIds);
-  }
+    console.log(`[Cleanup] Removing ${duplicateIds.length} duplicate passages...`)
 
-  const { error: deleteError } = await supabase
-    .from("passages")
-    .delete()
-    .in("id", duplicateIds);
+    return await transaction(async (client) => {
+      // Get AI passages that reference the duplicates
+      const { rows: aiPassages } = await query(
+        `SELECT id FROM passages 
+         WHERE parent_passage_id = ANY($1::uuid[])`,
+        [duplicateIds]
+      )
 
-  if (deleteError) {
-    console.error("[Cleanup] Error deleting duplicates:", deleteError);
+      const aiPassageIds = aiPassages.map((p) => p.id)
+
+      // Delete in order to respect foreign key constraints
+      if (aiPassageIds.length > 0) {
+        await query(
+          `DELETE FROM matchups 
+           WHERE ai_passage_id = ANY($1::uuid[]) 
+                 OR writer_passage_id = ANY($2::uuid[])`,
+          [aiPassageIds, duplicateIds]
+        )
+
+        await query(
+          `DELETE FROM passages 
+           WHERE id = ANY($1::uuid[])`,
+          [aiPassageIds]
+        )
+      } else {
+        await query(
+          `DELETE FROM matchups 
+           WHERE writer_passage_id = ANY($1::uuid[])`,
+          [duplicateIds]
+        )
+      }
+
+      // Delete the duplicate passages
+      await query(
+        `DELETE FROM passages 
+         WHERE id = ANY($1::uuid[])`,
+        [duplicateIds]
+      )
+
+      console.log(`[Cleanup] Successfully removed ${duplicateIds.length} duplicates`)
+
+      return {
+        duplicatesRemoved: duplicateIds.length,
+        aiPassagesRemoved: aiPassageIds.length,
+        removedIds: duplicateIds,
+      }
+    })
+  } catch (err) {
+    console.error('[Cleanup] Error:', err)
     throw createError({
       statusCode: 500,
-      statusMessage: deleteError.message,
-    });
+      statusMessage: 'Cleanup failed',
+    })
   }
-
-  console.log(`[Cleanup] Successfully removed ${duplicateIds.length} duplicates`);
-
-  return {
-    duplicatesRemoved: duplicateIds.length,
-    aiPassagesRemoved: aiPassageIds.length,
-    removedIds: duplicateIds,
-  };
-});
+})

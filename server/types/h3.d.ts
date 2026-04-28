@@ -1,8 +1,8 @@
-import type { User } from '@supabase/supabase-js'
+import type { AuthUser } from '~/server/utils/auth'
 
 declare module 'h3' {
   interface H3EventContext {
-    authUser?: User
+    authUser?: AuthUser
   }
 }
 

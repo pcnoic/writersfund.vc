@@ -1,6 +1,7 @@
 import { createError } from "h3";
 import { randomUUID } from "node:crypto";
-import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server";
+import { requireAuthUser } from "~/server/utils/auth";
+import { query } from "~/server/utils/db";
 import { getWordCount } from "~/server/utils/narrative";
 import { canSubmitNow } from "~/server/utils/schedule";
 import { spellcheck } from "~/server/utils/spellcheck";
@@ -14,13 +15,7 @@ interface CreatePassageBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: "Authentication required.",
-    });
-  }
+  const user = await requireAuthUser(event);
 
   const body = await readBody<CreatePassageBody>(event);
 
@@ -57,30 +52,20 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const supabase = await serverSupabaseClient(event);
-
   const writerPassageId = randomUUID();
 
-  const { error: insertPassagesError } = await supabase
-    .from("passages")
-    .insert({
-      id: writerPassageId,
-      user_id: user.id,
-      kind: "writer",
-      title: body.title.trim(),
-      content: corrected,
-      genre: body.genre.trim(),
-      status: "pending_processing",
-      narrative: null,
-      word_count: wordCount,
-      parent_passage_id: null,
-    });
-
-  if (insertPassagesError) {
+  try {
+    await query(
+      `INSERT INTO passages (
+        id, user_id, kind, title, content, genre, status, narrative, word_count, parent_passage_id
+      ) VALUES ($1, $2, 'writer', $3, $4, $5, 'pending_processing', NULL, $6, NULL)`,
+      [writerPassageId, user.id, body.title.trim(), corrected, body.genre.trim(), wordCount]
+    )
+  } catch {
     throw createError({
       statusCode: 500,
-      statusMessage: insertPassagesError.message,
-    });
+      statusMessage: 'Failed to create passage.',
+    })
   }
 
   return {

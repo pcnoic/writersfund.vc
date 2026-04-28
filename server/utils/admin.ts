@@ -1,30 +1,43 @@
 import { createError } from 'h3'
 import type { H3Event } from 'h3'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { verifyToken, extractTokenFromHeader, getTokenFromCookie } from '~/server/utils/jwt'
+import { queryOne } from '~/server/utils/db'
 
 export async function requireAdmin(event: H3Event) {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
+  // Try to get token from cookie or auth header
+  let token = getCookie(event, 'auth_token')
+  if (!token) {
+    const authHeader = getHeader(event, 'authorization')
+    token = extractTokenFromHeader(authHeader)
+  }
+
+  if (!token) {
     throw createError({
       statusCode: 401,
-      statusMessage: 'Authentication required.'
+      statusMessage: 'Authentication required.',
     })
   }
 
-  const supabase = await serverSupabaseClient(event)
+  const payload = verifyToken(token)
+  if (!payload) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Invalid or expired token.',
+    })
+  }
 
-  const { data: dbUser } = await supabase
-    .from('users')
-    .select('is_admin')
-    .eq('id', user.id)
-    .maybeSingle()
+  // Check if user is admin
+  const user = await queryOne<{ is_admin: boolean }>(
+    'SELECT is_admin FROM users WHERE id = $1',
+    [payload.userId]
+  )
 
-  if (!dbUser?.is_admin) {
+  if (!user?.is_admin) {
     throw createError({
       statusCode: 403,
-      statusMessage: 'Admin access required.'
+      statusMessage: 'Admin access required.',
     })
   }
 
-  return { user, isAdmin: true }
+  return { userId: payload.userId, isAdmin: true }
 }

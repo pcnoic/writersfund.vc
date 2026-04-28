@@ -1,45 +1,48 @@
-import { serverSupabaseClient } from '#supabase/server'
+import { query, queryOne } from '~/server/utils/db'
 import { requireAdmin } from '~/server/utils/admin'
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
 
-  const supabase = await serverSupabaseClient(event)
-
   const [
-    { count: totalUsers },
-    { count: totalPassages },
-    { count: totalVotes },
-    { count: totalMatchups },
-    { data: recentPassages },
-    { data: recentUsers },
-    { data: passagesByStatus },
-    { data: passagesByGenre }
+    usersCount,
+    passagesCount,
+    votesCount,
+    matchupsCount,
+    recentPassagesResult,
+    recentUsersResult,
+    passagesByStatusResult,
+    passagesByGenreResult
   ] = await Promise.all([
-    supabase.from('users').select('*', { count: 'exact', head: true }),
-    supabase.from('passages').select('*', { count: 'exact', head: true }).eq('kind', 'writer'),
-    supabase.from('votes').select('*', { count: 'exact', head: true }),
-    supabase.from('matchups').select('*', { count: 'exact', head: true }),
-    supabase
-      .from('passages')
-      .select('id, title, genre, status, word_count, created_at')
-      .eq('kind', 'writer')
-      .order('created_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('users')
-      .select('id, name, pen_name, email, created_at')
-      .order('created_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('passages')
-      .select('status')
-      .eq('kind', 'writer'),
-    supabase
-      .from('passages')
-      .select('genre')
-      .eq('kind', 'writer')
+    queryOne<{ count: string }>(`SELECT COUNT(*)::text AS count FROM users`),
+    queryOne<{ count: string }>(`SELECT COUNT(*)::text AS count FROM passages WHERE kind = 'writer'`),
+    queryOne<{ count: string }>(`SELECT COUNT(*)::text AS count FROM votes`),
+    queryOne<{ count: string }>(`SELECT COUNT(*)::text AS count FROM matchups`),
+    query(`
+      SELECT id, title, genre, status, word_count, created_at
+      FROM passages
+      WHERE kind = 'writer'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `),
+    query(`
+      SELECT id, name, pen_name, email, created_at
+      FROM users
+      ORDER BY created_at DESC
+      LIMIT 10
+    `),
+    query(`SELECT status FROM passages WHERE kind = 'writer'`),
+    query(`SELECT genre FROM passages WHERE kind = 'writer'`)
   ])
+
+  const totalUsers = Number(usersCount?.count || '0')
+  const totalPassages = Number(passagesCount?.count || '0')
+  const totalVotes = Number(votesCount?.count || '0')
+  const totalMatchups = Number(matchupsCount?.count || '0')
+  const recentPassages = recentPassagesResult.rows
+  const recentUsers = recentUsersResult.rows
+  const passagesByStatus = passagesByStatusResult.rows
+  const passagesByGenre = passagesByGenreResult.rows
 
   // Aggregate status counts
   const statusCounts: Record<string, number> = {}
@@ -57,11 +60,12 @@ export default defineEventHandler(async (event) => {
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   
-  const { data: recentSubmissions } = await supabase
-    .from('passages')
-    .select('created_at')
-    .eq('kind', 'writer')
-    .gte('created_at', sevenDaysAgo.toISOString())
+  const { rows: recentSubmissions } = await query(
+    `SELECT created_at
+     FROM passages
+     WHERE kind = 'writer' AND created_at >= $1`,
+    [sevenDaysAgo.toISOString()]
+  )
 
   const submissionsByDay: Record<string, number> = {}
   for (const p of recentSubmissions || []) {
@@ -70,10 +74,12 @@ export default defineEventHandler(async (event) => {
   }
 
   // Get signups per day for the last 7 days
-  const { data: recentSignups } = await supabase
-    .from('users')
-    .select('created_at')
-    .gte('created_at', sevenDaysAgo.toISOString())
+  const { rows: recentSignups } = await query(
+    `SELECT created_at
+     FROM users
+     WHERE created_at >= $1`,
+    [sevenDaysAgo.toISOString()]
+  )
 
   const signupsByDay: Record<string, number> = {}
   for (const u of recentSignups || []) {

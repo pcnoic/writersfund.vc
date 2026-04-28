@@ -1,7 +1,7 @@
-import { serverSupabaseUser } from '#supabase/server'
+import { getAuthUser } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
+  const user = await getAuthUser(event)
   if (!user) {
     return { user: null }
   }
@@ -10,7 +10,12 @@ export default defineEventHandler(async (event) => {
     user: {
       id: user.id,
       email: user.email,
-      metadata: user.user_metadata || {}
+      metadata: {
+        name: user.name,
+        pen_name: user.pen_name,
+        timezone: user.timezone,
+        bio: user.bio || ''
+      }
     }
   }
 })

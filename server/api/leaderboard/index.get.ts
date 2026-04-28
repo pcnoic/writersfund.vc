@@ -1,4 +1,4 @@
-import { serverSupabaseClient } from '#supabase/server'
+import { query, queryOne } from '~/server/utils/db'
 import { formatUtc, getNextLeaderboardUpdate } from '~/server/utils/schedule'
 
 function weekIndex(startIso: string, now = new Date()): number {
@@ -18,14 +18,25 @@ interface LeaderboardEntry {
 }
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient(event)
-
-  const [{ data: profiles }, { data: passages }, { data: matchups }, { data: votes }] = await Promise.all([
-    supabase.from('profiles').select('id, pen_name, name'),
-    supabase.from('passages').select('id, user_id'),
-    supabase.from('matchups').select('id, writer_passage_id, ai_passage_id'),
-    supabase.from('votes').select('matchup_id, winner_passage_id, created_at')
+  const [profilesResult, passagesResult, matchupsResult, votesResult] = await Promise.all([
+    query<{ id: string; pen_name: string; name: string }>(
+      `SELECT id, pen_name, name FROM users`
+    ),
+    query<{ id: string; user_id: string | null }>(
+      `SELECT id, user_id FROM passages`
+    ),
+    query<{ id: string; writer_passage_id: string; ai_passage_id: string }>(
+      `SELECT id, writer_passage_id, ai_passage_id FROM matchups`
+    ),
+    query<{ matchup_id: string; winner_passage_id: string; created_at: string }>(
+      `SELECT matchup_id, winner_passage_id, created_at FROM votes`
+    )
   ])
+
+  const profiles = profilesResult.rows
+  const passages = passagesResult.rows
+  const matchups = matchupsResult.rows
+  const votes = votesResult.rows
 
   const baseRating = 1200
   const aiRating = 1200
@@ -84,11 +95,13 @@ export default defineEventHandler(async (event) => {
 
   const entries = Array.from(writerMap.values()).sort((a, b) => b.rating - a.rating)
 
-  const { data: tournament } = await supabase
-    .from('tournaments')
-    .select('created_at')
-    .eq('status', 'active')
-    .maybeSingle()
+  const tournament = await queryOne<{ created_at: string }>(
+    `SELECT created_at
+     FROM tournaments
+     WHERE status = 'active'
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
 
   const currentWeek = tournament?.created_at ? weekIndex(tournament.created_at) : 1
   const totalWeeks = 12

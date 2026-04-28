@@ -1,4 +1,5 @@
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { requireAuthUser } from '~/server/utils/auth'
+import { queryOne } from '~/server/utils/db'
 
 function getWeekStart(): Date {
   const now = new Date()
@@ -11,26 +12,19 @@ function getWeekStart(): Date {
 }
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: 'Authentication required.'
-    })
-  }
-
-  const supabase = await serverSupabaseClient(event)
+  const user = await requireAuthUser(event)
   const weekStart = getWeekStart()
 
-  const { data: submission } = await supabase
-    .from('passages')
-    .select('id, title, genre, content, narrative, word_count, created_at')
-    .eq('user_id', user.id)
-    .eq('kind', 'writer')
-    .gte('created_at', weekStart.toISOString())
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const submission = await queryOne(
+    `SELECT id, title, genre, content, narrative, word_count, created_at
+     FROM passages
+     WHERE user_id = $1
+       AND kind = 'writer'
+       AND created_at >= $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [user.id, weekStart.toISOString()]
+  )
 
   return {
     hasSubmission: !!submission,

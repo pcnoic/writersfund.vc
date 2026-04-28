@@ -40,6 +40,18 @@ spec:
           envFrom:
             - secretRef:
                 name: wf-app-env
+            - secretRef:
+                name: postgres-secret
+                optional: true
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@postgres:5432/writersfund"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+                  optional: true
           ports:
             - containerPort: 3000
               protocol: TCP

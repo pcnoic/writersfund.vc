@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
+import { query, queryOne } from "~/server/utils/db";
 import {
   buildAiStoryFromNarrative,
   getWordCount,
@@ -20,33 +20,21 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Supabase configuration missing",
-    });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const { data: pendingPassages, error: fetchError } = await supabase
-    .from("passages")
-    .select("id, title, content, genre, word_count, user_id")
-    .is("processed_at", null)
-    .eq("kind", "writer")
-    .order("created_at", { ascending: true })
-    .limit(BATCH_SIZE);
-
-  if (fetchError) {
-    console.error("[Cron] Error fetching pending passages:", fetchError);
-    throw createError({
-      statusCode: 500,
-      statusMessage: fetchError.message,
-    });
-  }
+  const { rows: pendingPassages } = await query<{
+    id: string;
+    title: string;
+    content: string;
+    genre: string;
+    word_count: number | null;
+    user_id: string | null;
+  }>(
+    `SELECT id, title, content, genre, word_count, user_id
+     FROM passages
+     WHERE processed_at IS NULL AND kind = 'writer'
+     ORDER BY created_at ASC
+     LIMIT $1`,
+    [BATCH_SIZE]
+  );
 
   if (!pendingPassages || pendingPassages.length === 0) {
     return { processed: 0, message: "No pending passages to process" };
@@ -71,59 +59,45 @@ export default defineEventHandler(async (event) => {
 
       const aiPassageId = randomUUID();
 
-      const { error: aiInsertError } = await supabase.from("passages").insert({
-        id: aiPassageId,
-        user_id: null,
-        kind: "ai",
-        title: `${passage.title} (AI mirror)`,
-        content: aiStory,
-        genre: passage.genre,
-        status: "approved",
-        narrative,
-        word_count: wordCount,
-        parent_passage_id: passage.id,
-      });
+      await query(
+        `INSERT INTO passages (
+          id, user_id, kind, title, content, genre, status, narrative, word_count, parent_passage_id
+        ) VALUES ($1, NULL, 'ai', $2, $3, $4, 'approved', $5, $6, $7)`,
+        [aiPassageId, `${passage.title} (AI mirror)`, aiStory, passage.genre, narrative, wordCount, passage.id]
+      );
 
-      if (aiInsertError) {
-        console.error(`[Cron] Error inserting AI passage for ${passage.id}:`, aiInsertError);
-        results.push({ id: passage.id, success: false, error: aiInsertError.message });
-        continue;
-      }
+      await query(
+        `UPDATE passages
+         SET status = 'approved', narrative = $1, processed_at = $2
+         WHERE id = $3`,
+        [narrative, new Date().toISOString(), passage.id]
+      );
 
-      const { error: updateError } = await supabase
-        .from("passages")
-        .update({ 
-          status: "approved", 
-          narrative,
-          processed_at: new Date().toISOString()
-        })
-        .eq("id", passage.id);
-
-      if (updateError) {
-        console.error(`[Cron] Error updating passage ${passage.id}:`, updateError);
-        results.push({ id: passage.id, success: false, error: updateError.message });
-        continue;
-      }
-
-      const { data: tournament } = await supabase
-        .from("tournaments")
-        .select("id")
-        .eq("status", "active")
-        .maybeSingle();
+      const tournament = await queryOne<{ id: string }>(
+        `SELECT id
+         FROM tournaments
+         WHERE status = 'active'
+         ORDER BY created_at DESC
+         LIMIT 1`
+      );
 
       if (tournament?.id) {
         const nextWindow = getNextVotingWindow();
         const matchupId = randomUUID();
 
-        await supabase.from("matchups").insert({
-          id: matchupId,
-          tournament_id: tournament.id,
-          writer_passage_id: passage.id,
-          ai_passage_id: aiPassageId,
-          opens_at: nextWindow.opensAt.toISOString(),
-          closes_at: nextWindow.closesAt.toISOString(),
-          status: "open",
-        });
+        await query(
+          `INSERT INTO matchups (
+            id, tournament_id, writer_passage_id, ai_passage_id, opens_at, closes_at, status
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'open')`,
+          [
+            matchupId,
+            tournament.id,
+            passage.id,
+            aiPassageId,
+            nextWindow.opensAt.toISOString(),
+            nextWindow.closesAt.toISOString(),
+          ]
+        );
       }
 
       console.log(`[Cron] Successfully processed passage ${passage.id}`);

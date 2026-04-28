@@ -1,5 +1,5 @@
 import { createError, getRequestURL } from 'h3'
-import { serverSupabaseUser } from '#supabase/server'
+import { getAuthUser } from '~/server/utils/auth'
 
 const protectedPrefixes = [
   '/api/ballots',
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  const user = await serverSupabaseUser(event)
+  const user = await getAuthUser(event)
   if (!user) {
     throw createError({ statusCode: 401, statusMessage: 'Sign in first to use this endpoint.' })
   }

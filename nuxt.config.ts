@@ -1,11 +1,8 @@
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
   devtools: { enabled: true },
-  modules: ["@nuxtjs/supabase"],
-  supabase: {
-    redirect: false,
-  },
   runtimeConfig: {
+    jwtSecret: process.env.JWT_SECRET || "your-secret-key-change-this-in-production",
     recaptchaSecretKey: process.env.RECAPTCHA_SECRET_KEY || "",
     public: {
       recaptchaSiteKey: process.env.RECAPTCHA_SITE_KEY || "",

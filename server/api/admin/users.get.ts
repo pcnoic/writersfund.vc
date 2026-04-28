@@ -1,28 +1,14 @@
-import { serverSupabaseClient } from '#supabase/server'
+import { query } from '~/server/utils/db'
 import { requireAdmin } from '~/server/utils/admin'
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
 
-  const supabase = await serverSupabaseClient(event)
+  const { rows: admins } = await query(
+    `SELECT id, user_id, email, role, created_at
+     FROM admin_users
+     ORDER BY created_at DESC`
+  )
 
-  const { data: admins, error } = await supabase
-    .from('admin_users')
-    .select(`
-      id,
-      user_id,
-      email,
-      role,
-      created_at
-    `)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: error.message
-    })
-  }
-
-  return { admins: admins || [] }
+  return { admins }
 })

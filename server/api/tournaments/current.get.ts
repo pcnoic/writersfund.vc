@@ -1,11 +1,13 @@
-import { serverSupabaseClient } from '#supabase/server'
+import { queryOne } from '~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient(event)
-  const { data } = await supabase
-    .from('tournaments')
-    .select('id, name, season, status, created_at')
-    .eq('status', 'active')
-    .maybeSingle()
+  const data = await queryOne(
+    `SELECT id, name, season, status, created_at
+     FROM tournaments
+     WHERE status = 'active'
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+
   return data || null
 })

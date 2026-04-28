@@ -1,6 +1,7 @@
 import { createError } from 'h3'
 import { randomUUID } from 'node:crypto'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { requireAuthUser } from '~/server/utils/auth'
+import { query, queryOne } from '~/server/utils/db'
 import type { VoteChoice } from '~/types/domain'
 import { verifyRecaptcha } from '~/server/utils/recaptcha'
 
@@ -12,10 +13,7 @@ interface VoteBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    throw createError({ statusCode: 401, statusMessage: 'Authentication required.' })
-  }
+  const user = await requireAuthUser(event)
 
   const body = await readBody<VoteBody>(event)
 
@@ -33,13 +31,18 @@ export default defineEventHandler(async (event) => {
 
   await verifyRecaptcha(body.recaptchaToken || '', 'vote')
 
-  const supabase = await serverSupabaseClient(event)
-
-  const { data: ballot } = await supabase
-    .from('ballots')
-    .select('id, matchup_id, voter_id, option_a, option_b')
-    .eq('id', body.ballotId)
-    .maybeSingle()
+  const ballot = await queryOne<{
+    id: string
+    matchup_id: string
+    voter_id: string
+    option_a: string
+    option_b: string
+  }>(
+    `SELECT id, matchup_id, voter_id, option_a, option_b
+     FROM ballots
+     WHERE id = $1`,
+    [body.ballotId]
+  )
 
   if (!ballot) {
     throw createError({ statusCode: 404, statusMessage: 'Ballot not found.' })
@@ -49,11 +52,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Ballot does not belong to this voter.' })
   }
 
-  const { data: matchup } = await supabase
-    .from('matchups')
-    .select('id, opens_at, closes_at')
-    .eq('id', ballot.matchup_id)
-    .maybeSingle()
+  const matchup = await queryOne<{ id: string; opens_at: string; closes_at: string }>(
+    `SELECT id, opens_at, closes_at
+     FROM matchups
+     WHERE id = $1`,
+    [ballot.matchup_id]
+  )
 
   if (!matchup) {
     throw createError({ statusCode: 404, statusMessage: 'Matchup not found.' })
@@ -64,12 +68,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Voting is closed for this matchup.' })
   }
 
-  const { data: existingVote } = await supabase
-    .from('votes')
-    .select('id')
-    .eq('matchup_id', ballot.matchup_id)
-    .eq('voter_id', user.id)
-    .maybeSingle()
+  const existingVote = await queryOne<{ id: string }>(
+    `SELECT id
+     FROM votes
+     WHERE matchup_id = $1 AND voter_id = $2`,
+    [ballot.matchup_id, user.id]
+  )
 
   if (existingVote) {
     throw createError({ statusCode: 409, statusMessage: 'You have already voted on this matchup.' })
@@ -77,20 +81,25 @@ export default defineEventHandler(async (event) => {
 
   const winnerPassageId = body.choice === 'A' ? ballot.option_a : ballot.option_b
 
-  const { error } = await supabase.from('votes').insert({
-    id: randomUUID(),
-    event_id: randomUUID(),
-    matchup_id: ballot.matchup_id,
-    ballot_id: ballot.id,
-    voter_id: user.id,
-    choice: body.choice,
-    winner_passage_id: winnerPassageId,
-    feedback: body.feedback.trim(),
-    trust_weight: 1
-  })
-
-  if (error) {
-    throw createError({ statusCode: 500, statusMessage: error.message })
+  try {
+    await query(
+      `INSERT INTO votes (
+        id, event_id, matchup_id, ballot_id, voter_id, choice, winner_passage_id, feedback, trust_weight
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        randomUUID(),
+        randomUUID(),
+        ballot.matchup_id,
+        ballot.id,
+        user.id,
+        body.choice,
+        winnerPassageId,
+        body.feedback.trim(),
+        1,
+      ]
+    )
+  } catch (error) {
+    throw createError({ statusCode: 500, statusMessage: 'Failed to save vote.' })
   }
 
   return { ok: true }

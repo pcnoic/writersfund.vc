@@ -1,5 +1,5 @@
 import { createError } from 'h3'
-import { serverSupabaseClient } from '#supabase/server'
+import { query, queryOne } from '~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   const matchupId = getRouterParam(event, 'id')
@@ -7,13 +7,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Matchup id is required.' })
   }
 
-  const supabase = await serverSupabaseClient(event)
-
-  const { data: matchup } = await supabase
-    .from('matchups')
-    .select('id, writer_passage_id, ai_passage_id, closes_at')
-    .eq('id', matchupId)
-    .maybeSingle()
+  const matchup = await queryOne<{
+    id: string
+    writer_passage_id: string
+    ai_passage_id: string
+    closes_at: string
+  }>(
+    `SELECT id, writer_passage_id, ai_passage_id, closes_at
+     FROM matchups
+     WHERE id = $1`,
+    [matchupId]
+  )
 
   if (!matchup) {
     throw createError({ statusCode: 404, statusMessage: 'Matchup not found.' })
@@ -27,10 +31,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: votes } = await supabase
-    .from('votes')
-    .select('winner_passage_id')
-    .eq('matchup_id', matchup.id)
+  const { rows: votes } = await query<{ winner_passage_id: string }>(
+    `SELECT winner_passage_id
+     FROM votes
+     WHERE matchup_id = $1`,
+    [matchup.id]
+  )
 
   let writerVotes = 0
   let aiVotes = 0

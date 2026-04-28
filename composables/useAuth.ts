@@ -1,10 +1,15 @@
 export function useAuth() {
-  const user = useSupabaseUser()
-  const client = useSupabaseClient()
+  const user = useState<any>('auth_user', () => null)
   const pending = useState<boolean>('auth_pending', () => false)
+  const error = useState<string | null>('auth_error', () => null)
 
   async function refresh(): Promise<void> {
-    await client.auth.getUser()
+    try {
+      const response = await $fetch('/api/auth/me')
+      user.value = response.user
+    } catch {
+      user.value = null
+    }
   }
 
   async function signUp(input: {
@@ -16,37 +21,25 @@ export function useAuth() {
     bio?: string
   }) {
     pending.value = true
+    error.value = null
     try {
-      const { data, error } = await client.auth.signUp({
-        email: input.email,
-        password: input.password,
-        options: {
-          data: {
-            name: input.name,
-            pen_name: input.penName || input.name,
-            timezone: input.timezone,
-            bio: input.bio || ''
-          }
-        }
+      const { user: newUser, token } = await $fetch('/api/auth/signup', {
+        method: 'POST',
+        body: {
+          email: input.email,
+          password: input.password,
+          name: input.name,
+          penName: input.penName,
+          timezone: input.timezone,
+          bio: input.bio || '',
+        },
       })
 
-      if (error) throw error
-
-      if (data.user) {
-        const { error: insertError } = await client.from('users').insert({
-          id: data.user.id,
-          email: input.email,
-          name: input.name,
-          pen_name: input.penName || input.name,
-          timezone: input.timezone,
-          bio: input.bio || ''
-        })
-        if (insertError) {
-          console.error('Failed to create user record:', insertError)
-        }
-      }
-
-      return data
+      user.value = newUser
+      return { user: newUser, token }
+    } catch (err: any) {
+      error.value = err.data?.statusMessage || 'Sign-up failed'
+      throw err
     } finally {
       pending.value = false
     }
@@ -54,25 +47,39 @@ export function useAuth() {
 
   async function signInWithPassword(email: string, password: string) {
     pending.value = true
+    error.value = null
     try {
-      const { data, error } = await client.auth.signInWithPassword({ email, password })
-      if (error) throw error
-      return data
+      const { user: signedInUser, token } = await $fetch('/api/auth/signin', {
+        method: 'POST',
+        body: { email, password },
+      })
+
+      user.value = signedInUser
+      return { user: signedInUser, token }
+    } catch (err: any) {
+      error.value = err.data?.statusMessage || 'Sign-in failed'
+      throw err
     } finally {
       pending.value = false
     }
   }
 
   async function signOut(): Promise<void> {
-    await client.auth.signOut()
+    try {
+      await $fetch('/api/auth/signout', { method: 'POST' })
+      user.value = null
+    } catch (err) {
+      console.error('Sign-out error:', err)
+    }
   }
 
   return {
     user,
     pending,
+    error,
     refresh,
     signUp,
     signInWithPassword,
-    signOut
+    signOut,
   }
 }

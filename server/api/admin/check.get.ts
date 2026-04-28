@@ -1,20 +1,12 @@
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { getAuthUser } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
+  const user = await getAuthUser(event)
   if (!user) {
     return { isAdmin: false }
   }
 
-  const supabase = await serverSupabaseClient(event)
-
-  const { data: dbUser } = await supabase
-    .from('users')
-    .select('is_admin')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (dbUser?.is_admin) {
+  if (user.is_admin) {
     return { isAdmin: true }
   }
 

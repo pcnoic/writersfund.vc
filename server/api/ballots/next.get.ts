@@ -1,44 +1,48 @@
 import { createError } from 'h3'
 import { randomUUID } from 'node:crypto'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { requireAuthUser } from '~/server/utils/auth'
+import { query, queryOne } from '~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    throw createError({ statusCode: 401, statusMessage: 'Authentication required.' })
-  }
-
-  const supabase = await serverSupabaseClient(event)
+  const user = await requireAuthUser(event)
   const nowIso = new Date().toISOString()
 
-  const { data: matchups, error: matchupsError } = await supabase
-    .from('matchups')
-    .select('id, writer_passage_id, ai_passage_id, opens_at, closes_at')
-    .eq('status', 'open')
-    .lte('opens_at', nowIso)
-    .gte('closes_at', nowIso)
-    .order('opens_at', { ascending: true })
-
-  if (matchupsError) {
-    throw createError({ statusCode: 500, statusMessage: matchupsError.message })
-  }
+  const { rows: matchups } = await query<{
+    id: string
+    writer_passage_id: string
+    ai_passage_id: string
+    opens_at: string
+    closes_at: string
+  }>(
+    `SELECT id, writer_passage_id, ai_passage_id, opens_at, closes_at
+     FROM matchups
+     WHERE status = 'open' AND opens_at <= $1 AND closes_at >= $1
+     ORDER BY opens_at ASC`,
+    [nowIso]
+  )
 
   for (const matchup of matchups || []) {
-    const { data: existingVote } = await supabase
-      .from('votes')
-      .select('id')
-      .eq('matchup_id', matchup.id)
-      .eq('voter_id', user.id)
-      .maybeSingle()
+    const existingVote = await queryOne<{ id: string }>(
+      `SELECT id
+       FROM votes
+       WHERE matchup_id = $1 AND voter_id = $2`,
+      [matchup.id, user.id]
+    )
 
     if (existingVote) continue
 
-    let { data: ballot } = await supabase
-      .from('ballots')
-      .select('id, matchup_id, voter_id, option_a, option_b')
-      .eq('matchup_id', matchup.id)
-      .eq('voter_id', user.id)
-      .maybeSingle()
+    let ballot = await queryOne<{
+      id: string
+      matchup_id: string
+      voter_id: string
+      option_a: string
+      option_b: string
+    }>(
+      `SELECT id, matchup_id, voter_id, option_a, option_b
+       FROM ballots
+       WHERE matchup_id = $1 AND voter_id = $2`,
+      [matchup.id, user.id]
+    )
 
     if (!ballot) {
       const flip = Math.random() > 0.5
@@ -46,16 +50,14 @@ export default defineEventHandler(async (event) => {
       const optionA = flip ? matchup.writer_passage_id : matchup.ai_passage_id
       const optionB = flip ? matchup.ai_passage_id : matchup.writer_passage_id
 
-      const { error: ballotError } = await supabase.from('ballots').insert({
-        id: ballotId,
-        matchup_id: matchup.id,
-        voter_id: user.id,
-        option_a: optionA,
-        option_b: optionB
-      })
-
-      if (ballotError) {
-        throw createError({ statusCode: 500, statusMessage: ballotError.message })
+      try {
+        await query(
+          `INSERT INTO ballots (id, matchup_id, voter_id, option_a, option_b)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [ballotId, matchup.id, user.id, optionA, optionB]
+        )
+      } catch {
+        throw createError({ statusCode: 500, statusMessage: 'Failed to create ballot.' })
       }
 
       ballot = {
@@ -67,14 +69,18 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const { data: passages, error: passagesError } = await supabase
-      .from('passages')
-      .select('id, kind, title, content, genre')
-      .in('id', [ballot.option_a, ballot.option_b])
-
-    if (passagesError) {
-      throw createError({ statusCode: 500, statusMessage: passagesError.message })
-    }
+    const { rows: passages } = await query<{
+      id: string
+      kind: string
+      title: string
+      content: string
+      genre: string
+    }>(
+      `SELECT id, kind, title, content, genre
+       FROM passages
+       WHERE id = ANY($1::uuid[])`,
+      [[ballot.option_a, ballot.option_b]]
+    )
 
     const optionA = passages?.find((item) => item.id === ballot.option_a)
     const optionB = passages?.find((item) => item.id === ballot.option_b)

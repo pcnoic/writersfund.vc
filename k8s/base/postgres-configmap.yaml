@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: writersfund
+data:
+  01-init-schema.sql: |
+    -- Writers Fund schema for PostgreSQL
+
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      email TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      pen_name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      timezone TEXT DEFAULT 'UTC',
+      bio TEXT,
+      is_admin BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      goals TEXT NOT NULL,
+      project_summary TEXT NOT NULL,
+      writing_sample TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS tournaments (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name TEXT NOT NULL,
+      season TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS passages (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      genre TEXT NOT NULL,
+      status TEXT NOT NULL,
+      narrative TEXT,
+      word_count INTEGER,
+      parent_passage_id UUID REFERENCES passages(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS matchups (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tournament_id UUID NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      writer_passage_id UUID NOT NULL REFERENCES passages(id),
+      ai_passage_id UUID NOT NULL REFERENCES passages(id),
+      opens_at TIMESTAMPTZ NOT NULL,
+      closes_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ballots (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      matchup_id UUID NOT NULL REFERENCES matchups(id) ON DELETE CASCADE,
+      voter_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      option_a UUID NOT NULL REFERENCES passages(id),
+      option_b UUID NOT NULL REFERENCES passages(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS votes (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      matchup_id UUID NOT NULL REFERENCES matchups(id) ON DELETE CASCADE,
+      voter_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      winner_passage_id UUID NOT NULL REFERENCES passages(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Create indexes for common queries
+    CREATE INDEX IF NOT EXISTS idx_passages_user_id ON passages(user_id);
+    CREATE INDEX IF NOT EXISTS idx_passages_kind ON passages(kind);
+    CREATE INDEX IF NOT EXISTS idx_matchups_tournament_id ON matchups(tournament_id);
+    CREATE INDEX IF NOT EXISTS idx_ballots_matchup_id ON ballots(matchup_id);
+    CREATE INDEX IF NOT EXISTS idx_ballots_voter_id ON ballots(voter_id);
+    CREATE INDEX IF NOT EXISTS idx_votes_matchup_id ON votes(matchup_id);
+    CREATE INDEX IF NOT EXISTS idx_votes_voter_id ON votes(voter_id);
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

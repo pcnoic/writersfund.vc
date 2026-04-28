@@ -1,214 +1,172 @@
-import { createError } from "h3";
-import { serverSupabaseClient, serverSupabaseUser } from "#supabase/server";
+import { query, queryOne } from '~/server/utils/db'
+import { requireAuthUser } from '~/server/utils/auth'
 
 function weekIndex(startIso: string, now = new Date()): number {
-  const start = new Date(startIso);
-  const diffMs = now.getTime() - start.getTime();
-  return Math.max(
-    1,
-    Math.min(12, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1),
-  );
+  const start = new Date(startIso)
+  const diffMs = now.getTime() - start.getTime()
+  return Math.max(1, Math.min(12, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1))
 }
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: "Authentication required.",
-    });
+  const user = await requireAuthUser(event)
+
+  const userRecord = {
+    id: user.id,
+    name: user.name,
+    penName: user.pen_name,
+    email: user.email,
+    timezone: user.timezone,
+    bio: user.bio || '',
   }
 
-  const supabase = await serverSupabaseClient(event);
+  const [passagesResult, votesCastResult, userPassagesResult] = await Promise.all([
+    query<{ id: string; title: string; created_at: string }>(
+      `SELECT id, title, created_at
+       FROM passages
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [user.id]
+    ),
+    query<{ id: string; matchup_id: string; winner_passage_id: string; created_at: string }>(
+      `SELECT id, matchup_id, winner_passage_id, created_at
+       FROM votes
+       WHERE voter_id = $1`,
+      [user.id]
+    ),
+    query<{ id: string }>(
+      `SELECT id
+       FROM passages
+       WHERE user_id = $1`,
+      [user.id]
+    ),
+  ])
 
-  const { data: existingProfile } = await supabase
-    .from("profiles")
-    .select("id, name, pen_name, email, timezone, bio")
-    .eq("id", user.id)
-    .maybeSingle();
+  const passages = passagesResult.rows
+  const votesCast = votesCastResult.rows
+  const userPassages = userPassagesResult.rows
+  const passageIds = userPassages.map((item) => item.id)
 
-  let userRecord: {
-    id: string;
-    name: string;
-    penName: string;
-    email: string;
-    timezone: string;
-    bio: string;
-  };
+  const matchups = passageIds.length
+    ? (
+        await query<{ id: string; writer_passage_id: string; opens_at: string; closes_at: string }>(
+          `SELECT id, writer_passage_id, opens_at, closes_at
+           FROM matchups
+           WHERE writer_passage_id = ANY($1::uuid[])`,
+          [passageIds]
+        )
+      ).rows
+    : []
 
-  if (existingProfile) {
-    userRecord = {
-      id: existingProfile.id,
-      name: existingProfile.name,
-      penName: existingProfile.pen_name,
-      email: existingProfile.email,
-      timezone: existingProfile.timezone,
-      bio: existingProfile.bio || "",
-    };
-  } else {
-    const newProfile = {
-      id: user.id,
-      name: user.user_metadata?.name || "Writer",
-      pen_name: user.user_metadata?.pen_name || "Writer",
-      email: user.email!,
-      timezone: user.user_metadata?.timezone || "UTC",
-      bio: user.user_metadata?.bio || "",
-    };
-    await supabase.from("profiles").insert(newProfile);
-    userRecord = {
-      id: newProfile.id,
-      name: newProfile.name,
-      penName: newProfile.pen_name,
-      email: newProfile.email,
-      timezone: newProfile.timezone,
-      bio: newProfile.bio,
-    };
+  const matchupIds = matchups.map((item) => item.id)
+  const votesReceived = matchupIds.length
+    ? (
+        await query<{ id: string; matchup_id: string; winner_passage_id: string; feedback: string | null; created_at: string }>(
+          `SELECT id, matchup_id, winner_passage_id, feedback, created_at
+           FROM votes
+           WHERE matchup_id = ANY($1::uuid[])`,
+          [matchupIds]
+        )
+      ).rows
+    : []
+
+  let writerVotes = 0
+  for (const vote of votesReceived) {
+    const matchup = matchups.find((item) => item.id === vote.matchup_id)
+    if (!matchup) continue
+    if (vote.winner_passage_id === matchup.writer_passage_id) writerVotes += 1
   }
 
-  const { data: passages } = await supabase
-    .from("passages")
-    .select("id, title, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  const votesReceivedCount = votesReceived.length
+  const winRate = votesReceivedCount > 0 ? Math.round((writerVotes / votesReceivedCount) * 100) : 0
+  const averagePeerRating = winRate
 
-  const { data: votesCast } = await supabase
-    .from("votes")
-    .select("id, matchup_id, winner_passage_id, created_at")
-    .eq("voter_id", user.id);
-
-  const { data: userPassages } = await supabase
-    .from("passages")
-    .select("id")
-    .eq("user_id", user.id);
-
-  const passageIds = (userPassages || []).map((item) => item.id);
-
-  const { data: matchups } = await supabase
-    .from("matchups")
-    .select("id, writer_passage_id, opens_at, closes_at")
-    .in("writer_passage_id", passageIds.length ? passageIds : [""]);
-
-  const matchupIds = (matchups || []).map((item) => item.id);
-
-  const { data: votesReceived } = await supabase
-    .from("votes")
-    .select("id, matchup_id, winner_passage_id")
-    .in("matchup_id", matchupIds.length ? matchupIds : [""]);
-
-  let writerVotes = 0;
-  for (const vote of votesReceived || []) {
-    const matchup = matchups?.find((item) => item.id === vote.matchup_id);
-    if (!matchup) continue;
-    if (vote.winner_passage_id === matchup.writer_passage_id) writerVotes += 1;
-  }
-
-  const votesReceivedCount = votesReceived?.length || 0;
-  const winRate =
-    votesReceivedCount > 0
-      ? Math.round((writerVotes / votesReceivedCount) * 100)
-      : 0;
-  const averagePeerRating = winRate;
-
-  const { data: feedbackVotes } = await supabase
-    .from("votes")
-    .select("feedback")
-    .in("matchup_id", matchupIds.length ? matchupIds : [""]);
-
-  const feedbackList = (feedbackVotes || [])
+  const feedbackList = votesReceived
     .map((v) => v.feedback)
-    .filter((f) => f && f.trim().length > 0);
+    .filter((f): f is string => Boolean(f && f.trim().length > 0))
 
-  const baseRating = 1200;
-  const aiRating = 1200;
-  const kFactor = 24;
-  let currentElo = baseRating;
+  const baseRating = 1200
+  const aiRating = 1200
+  const kFactor = 24
+  let currentElo = baseRating
 
-  const { data: allVotesForElo } = await supabase
-    .from("votes")
-    .select("matchup_id, winner_passage_id, created_at")
-    .in("matchup_id", matchupIds.length ? matchupIds : [""])
-    .order("created_at", { ascending: true });
+  const allVotesForElo = [...votesReceived].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
 
-  for (const vote of allVotesForElo || []) {
-    const matchup = matchups?.find((m) => m.id === vote.matchup_id);
-    if (!matchup) continue;
-    const writerWon = vote.winner_passage_id === matchup.writer_passage_id;
-    const expected = 1 / (1 + 10 ** ((aiRating - currentElo) / 400));
-    const actual = writerWon ? 1 : 0;
-    currentElo = Number((currentElo + kFactor * (actual - expected)).toFixed(2));
+  for (const vote of allVotesForElo) {
+    const matchup = matchups.find((m) => m.id === vote.matchup_id)
+    if (!matchup) continue
+    const writerWon = vote.winner_passage_id === matchup.writer_passage_id
+    const expected = 1 / (1 + 10 ** ((aiRating - currentElo) / 400))
+    const actual = writerWon ? 1 : 0
+    currentElo = Number((currentElo + kFactor * (actual - expected)).toFixed(2))
   }
 
-  const { data: allProfiles } = await supabase
-    .from("profiles")
-    .select("id");
+  const [allProfilesResult, allPassagesResult, allMatchupsResult, allVotesResult] = await Promise.all([
+    query<{ id: string }>(`SELECT id FROM users`),
+    query<{ id: string; user_id: string | null }>(
+      `SELECT id, user_id
+       FROM passages
+       WHERE kind = 'writer'`
+    ),
+    query<{ id: string; writer_passage_id: string }>(
+      `SELECT id, writer_passage_id
+       FROM matchups`
+    ),
+    query<{ matchup_id: string; winner_passage_id: string; created_at: string }>(
+      `SELECT matchup_id, winner_passage_id, created_at
+       FROM votes
+       ORDER BY created_at ASC`
+    ),
+  ])
 
-  const { data: allPassages } = await supabase
-    .from("passages")
-    .select("id, user_id")
-    .eq("kind", "writer");
-
-  const { data: allMatchups } = await supabase
-    .from("matchups")
-    .select("id, writer_passage_id");
-
-  const { data: allVotes } = await supabase
-    .from("votes")
-    .select("matchup_id, winner_passage_id, created_at")
-    .order("created_at", { ascending: true });
-
-  const writerElos = new Map<string, number>();
-  for (const p of allProfiles || []) {
-    writerElos.set(p.id, baseRating);
+  const writerElos = new Map<string, number>()
+  for (const p of allProfilesResult.rows) {
+    writerElos.set(p.id, baseRating)
   }
 
-  for (const vote of allVotes || []) {
-    const matchup = allMatchups?.find((m) => m.id === vote.matchup_id);
-    if (!matchup) continue;
-    const passage = allPassages?.find((p) => p.id === matchup.writer_passage_id);
-    if (!passage?.user_id) continue;
-    const elo = writerElos.get(passage.user_id) || baseRating;
-    const writerWon = vote.winner_passage_id === matchup.writer_passage_id;
-    const expected = 1 / (1 + 10 ** ((aiRating - elo) / 400));
-    const actual = writerWon ? 1 : 0;
-    writerElos.set(passage.user_id, Number((elo + kFactor * (actual - expected)).toFixed(2)));
+  for (const vote of allVotesResult.rows) {
+    const matchup = allMatchupsResult.rows.find((m) => m.id === vote.matchup_id)
+    if (!matchup) continue
+    const passage = allPassagesResult.rows.find((p) => p.id === matchup.writer_passage_id)
+    if (!passage?.user_id) continue
+    const elo = writerElos.get(passage.user_id) || baseRating
+    const writerWon = vote.winner_passage_id === matchup.writer_passage_id
+    const expected = 1 / (1 + 10 ** ((aiRating - elo) / 400))
+    const actual = writerWon ? 1 : 0
+    writerElos.set(passage.user_id, Number((elo + kFactor * (actual - expected)).toFixed(2)))
   }
 
-  const sortedWriters = Array.from(writerElos.entries()).sort((a, b) => b[1] - a[1]);
-  const userRankIndex = sortedWriters.findIndex(([id]) => id === user.id);
-  const userRank = userRankIndex >= 0 ? userRankIndex + 1 : null;
+  const sortedWriters = Array.from(writerElos.entries()).sort((a, b) => b[1] - a[1])
+  const userRankIndex = sortedWriters.findIndex(([id]) => id === user.id)
+  const userRank = userRankIndex >= 0 ? userRankIndex + 1 : null
 
-  const { data: tournament } = await supabase
-    .from("tournaments")
-    .select("created_at")
-    .eq("status", "active")
-    .maybeSingle();
+  const tournament = await queryOne<{ created_at: string }>(
+    `SELECT created_at
+     FROM tournaments
+     WHERE status = 'active'
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
 
-  const week = tournament?.created_at ? weekIndex(tournament.created_at) : 1;
+  const week = tournament?.created_at ? weekIndex(tournament.created_at) : 1
 
   const timeline = Array.from({ length: 12 }).map((_, index) => {
-    const weekNumber = index + 1;
-    const start = tournament?.created_at
-      ? new Date(tournament.created_at)
-      : new Date();
-    start.setUTCDate(start.getUTCDate() + (weekNumber - 1) * 7);
-    const end = new Date(start);
-    end.setUTCDate(start.getUTCDate() + 7);
+    const weekNumber = index + 1
+    const start = tournament?.created_at ? new Date(tournament.created_at) : new Date()
+    start.setUTCDate(start.getUTCDate() + (weekNumber - 1) * 7)
+    const end = new Date(start)
+    end.setUTCDate(start.getUTCDate() + 7)
 
-    const submitted = (passages || []).some((passage) => {
-      const createdAt = new Date(passage.created_at);
-      return createdAt >= start && createdAt < end;
-    });
+    const submitted = passages.some((passage) => {
+      const createdAt = new Date(passage.created_at)
+      return createdAt >= start && createdAt < end
+    })
 
     return {
       week: weekNumber,
-      status: submitted
-        ? "Submitted"
-        : weekNumber < week
-          ? "Missed"
-          : "Pending",
-      delta: submitted ? "TBD" : "—",
-    };
-  });
+      status: submitted ? 'Submitted' : weekNumber < week ? 'Missed' : 'Pending',
+      delta: submitted ? 'TBD' : '—',
+    }
+  })
 
   return {
     user: {
@@ -217,7 +175,7 @@ export default defineEventHandler(async (event) => {
       penName: userRecord.penName,
       email: userRecord.email,
       timezone: userRecord.timezone,
-      bio: userRecord.bio || "",
+      bio: userRecord.bio || '',
     },
     competitive: {
       rank: userRank,
@@ -226,14 +184,14 @@ export default defineEventHandler(async (event) => {
       totalWeeks: 12,
     },
     stats: {
-      submissions: passages?.length || 0,
+      submissions: passages.length,
       winRate,
       averagePeerRating,
       feedbackReceived: votesReceivedCount,
-      votesCast: votesCast?.length || 0,
+      votesCast: votesCast.length,
     },
     timeline,
-    passages: passages || [],
+    passages,
     feedback: feedbackList,
-  };
-});
+  }
+})

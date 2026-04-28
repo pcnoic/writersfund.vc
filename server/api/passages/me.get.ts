@@ -1,22 +1,21 @@
 import { createError } from 'h3'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { requireAuthUser } from '~/server/utils/auth'
+import { query } from '~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    throw createError({ statusCode: 401, statusMessage: 'Authentication required.' })
+  const user = await requireAuthUser(event)
+
+  try {
+    const { rows } = await query(
+      `SELECT id, title, created_at, genre, status
+       FROM passages
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [user.id]
+    )
+
+    return { passages: rows }
+  } catch (error) {
+    throw createError({ statusCode: 500, statusMessage: 'Failed to fetch passages.' })
   }
-
-  const supabase = await serverSupabaseClient(event)
-  const { data, error } = await supabase
-    .from('passages')
-    .select('id, title, created_at, genre, status')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    throw createError({ statusCode: 500, statusMessage: error.message })
-  }
-
-  return { passages: data || [] }
 })
