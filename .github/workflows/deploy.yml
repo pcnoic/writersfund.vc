@@ -1,0 +1,91 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.christos.id
+  PROJECT: writersfund
+  IMAGE_NAME: wf-app
+
+jobs:
+  # -- Build image and push to Harbor -------------------------------------------
+  build-push:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.set-image.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          provenance: false
+
+      - name: Export image reference
+        id: set-image
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+  # -- Deploy to Kubernetes -----------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace writersfund \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy application
+        working-directory: k8s/overlays/production
+        run: |
+          kustomize edit set image "wf-app=${{ needs.build-push.outputs.image }}"
+          kubectl apply -k .
+
+      - name: Wait for server rollout
+        run: |
+          kubectl rollout status deployment/wf-app \
+            -n writersfund \
+            --timeout=300s
+
+      - name: Verify pod health
+        run: |
+          kubectl get pods -n writersfund
+          kubectl rollout history deployment/wf-app -n writersfund

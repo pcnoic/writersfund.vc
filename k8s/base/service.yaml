@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wf-app
+  namespace: writersfund
+  labels:
+    app: wf-app
+    app.kubernetes.io/name: wf-app
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    app: wf-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+  type: ClusterIP
