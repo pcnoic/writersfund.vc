@@ -37,6 +37,9 @@ spec:
         - name: wf-app
           image: wf-app:latest
           imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: wf-app-env
           ports:
             - containerPort: 3000
               protocol: TCP
