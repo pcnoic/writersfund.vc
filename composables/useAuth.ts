@@ -19,6 +19,7 @@ export function useAuth() {
     penName: string
     timezone: string
     bio?: string
+    recaptchaToken?: string
   }) {
     pending.value = true
     error.value = null
@@ -32,6 +33,7 @@ export function useAuth() {
           penName: input.penName,
           timezone: input.timezone,
           bio: input.bio || '',
+          recaptchaToken: input.recaptchaToken,
         },
       })
 

@@ -1,6 +1,7 @@
 import { query, queryOne } from '~/server/utils/db'
 import { hashPassword, comparePassword } from '~/server/utils/password'
 import { generateToken } from '~/server/utils/jwt'
+import { verifyRecaptcha } from '~/server/utils/recaptcha'
 
 interface SignUpBody {
   email: string
@@ -9,10 +10,20 @@ interface SignUpBody {
   penName: string
   timezone: string
   bio?: string
+  recaptchaToken?: string
 }
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<SignUpBody>(event)
+
+  // Validate reCAPTCHA
+  if (body.recaptchaToken) {
+    try {
+      await verifyRecaptcha(body.recaptchaToken, 'signup')
+    } catch (error) {
+      throw error
+    }
+  }
 
   // Validate input
   if (!body.email || !body.password || !body.name || !body.penName) {

@@ -58,7 +58,8 @@ async function submit() {
       email: form.email,
       password: form.password,
       timezone: form.timezone,
-      bio: form.bio
+      bio: form.bio,
+      recaptchaToken
     })
 
     if (result.session) {
